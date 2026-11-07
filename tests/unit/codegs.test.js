@@ -22,9 +22,20 @@ function load() {
 function fakeSheet(rows) {
   return {
     rows,
+    failWrite: false,
     getDataRange() { return { getValues: () => rows.map((r) => r.slice()) }; },
-    appendRow(r) { rows.push(r.slice()); },
     getLastRow() { return rows.length; },
+    getLastColumn() { return rows.reduce((m, r) => Math.max(m, r.length), 0); },
+    getRange(r, c, nr, nc) {
+      const self = this;
+      return {
+        getValues: () => rows.slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc)),
+        setValues(vals) {
+          if (self.failWrite) throw new Error('boom');
+          vals.forEach((v, i) => { rows[r - 1 + i] = v.slice(); });
+        },
+      };
+    },
   };
 }
 
@@ -38,7 +49,7 @@ function prodRow(p) { return PROD_HEADER.map((h) => p[h]); }
 
 function makeSs(products, pedidos, lineas) {
   return fakeSs({
-    'Productos': [PROD_HEADER].concat(products.map(prodRow)),
+    'Productos': [PROD_HEADER.slice()].concat(products.map(prodRow)),
     'Pedidos': [PED_HEADER].concat(pedidos || []),
     'Líneas': [LIN_HEADER].concat(lineas || []),
   });
@@ -129,7 +140,7 @@ test('handleOrder stores whatsapp as text and neutralizes formula injection', ()
   c.handleOrder(ss, b, lock(), NOW);
   const row = ss.sheets['Pedidos'].rows[1];
   assert.equal(row[3], '\'=HYPERLINK("http://x")');
-  assert.equal(row[4], "'+503 7000-1111");
+  assert.equal(row[4], "'+503 7000-1111"); // formula guard only
   assert.equal(row[5], "'-cmd");
   assert.ok(row[1] instanceof Date);
 });
@@ -177,7 +188,7 @@ test('lock not acquired returns ocupado and writes nothing', () => {
 test('handleOrder releases the lock even when an exception is thrown', () => {
   const c = load();
   const ss = makeSs([P('elf-bronzer')]);
-  ss.sheets['Pedidos'].appendRow = () => { throw new Error('boom'); };
+  ss.sheets['Pedidos'].failWrite = true;
   const l = lock();
   assert.throws(() => c.handleOrder(ss, body([{ sku: 'elf-bronzer', cantidad: 1, tipo: 'Reserva' }]), l, NOW));
   assert.equal(l.released, 1);
@@ -185,7 +196,6 @@ test('handleOrder releases the lock even when an exception is thrown', () => {
 
 test('doPost returns error_interno JSON on bad input', () => {
   const c = load();
-  const out = [];
   c.ContentService = {
     MimeType: { JSON: 'json' },
     createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }),
@@ -194,5 +204,45 @@ test('doPost returns error_interno JSON on bad input', () => {
   c.LockService = { getScriptLock: () => lock() };
   const r = c.doPost({ postData: { contents: 'not json' } });
   assert.deepEqual(JSON.parse(r.text), { ok: false, error: 'error_interno' });
-  out.length = 0;
+});
+
+test('handleOrder flushes before releasing the lock', () => {
+  const c = load();
+  const ss = makeSs([P('elf-bronzer')]);
+  const events = [];
+  const l = { tryLock: () => true, releaseLock: () => events.push('release') };
+  const r = c.handleOrder(ss, body([{ sku: 'elf-bronzer', cantidad: 1, tipo: 'Reserva' }]), l, NOW, { flush: () => events.push('flush') });
+  assert.equal(r.ok, true);
+  assert.deepEqual(events, ['flush', 'release']);
+});
+
+test('pedido_id collision is regenerated under the lock', () => {
+  const c = load();
+  const ss = makeSs([P('elf-bronzer'), P('elf-brow-pencil')]);
+  const it = (sku) => [{ sku, cantidad: 1, tipo: 'Reserva' }];
+  const r1 = c.handleOrder(ss, body(it('elf-bronzer')), lock(), NOW, { rand: () => 0.1234 });
+  assert.equal(r1.pedido_id, 'R-261107-1234');
+  const seq = [0.1234, 0.1234, 0.5678];
+  const r2 = c.handleOrder(ss, body(it('elf-brow-pencil')), lock(), NOW, { rand: () => seq.shift() });
+  assert.equal(r2.pedido_id, 'R-261107-5678');
+  assert.equal(ss.sheets['Líneas'].rows[2][0], 'R-261107-5678');
+});
+
+test('pedido_id falls back to a longer suffix when rand keeps colliding', () => {
+  const c = load();
+  const ss = makeSs([P('elf-bronzer'), P('elf-brow-pencil')]);
+  c.handleOrder(ss, body([{ sku: 'elf-bronzer', cantidad: 1, tipo: 'Reserva' }]), lock(), NOW, { rand: () => 0.1234 });
+  const r = c.handleOrder(ss, body([{ sku: 'elf-brow-pencil', cantidad: 1, tipo: 'Reserva' }]), lock(), NOW, { rand: () => 0.1234 });
+  assert.match(r.pedido_id, /^R-261107-1234-\d{3}$/);
+  assert.equal(ss.sheets['Líneas'].rows[2][0], r.pedido_id);
+});
+
+test('handleCatalog never exposes extra private columns', () => {
+  const c = load();
+  const ss = makeSs([P('elf-bronzer')]);
+  ss.sheets['Productos'].rows[0].push('costo', 'proveedor');
+  ss.sheets['Productos'].rows[1].push(3.2, 'Acme');
+  const out = c.handleCatalog(ss).products[0];
+  assert.ok(!('costo' in out) && !('proveedor' in out) && !('existencias' in out));
+  assert.deepEqual(Object.keys(out).sort(), PROD_HEADER.filter((h) => h !== 'existencias').concat('disponible').sort());
 });

@@ -76,13 +76,18 @@ function safeText(v) {
   return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
 
-function appendByHeader(sheet, obj) {
-  var headers = sheet.getDataRange().getValues()[0] || [];
-  var row = headers.map(function (h) {
-    var key = String(h).trim();
-    return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : '';
+// Agrega varias filas de una vez, ordenando los valores según los encabezados de la hoja.
+function appendRowsByHeader(sheet, objs) {
+  if (!objs.length) return;
+  var width = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, width).getValues()[0];
+  var rows = objs.map(function (obj) {
+    return headers.map(function (h) {
+      var key = String(h).trim();
+      return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : '';
+    });
   });
-  sheet.appendRow(row);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, width).setValues(rows);
 }
 
 // ---------- Manejadores ----------
@@ -94,8 +99,8 @@ function handleCatalog(ss, now) {
     return isTruthyVisible(p.visible);
   }).map(function (p) {
     var out = {};
-    Object.keys(p).forEach(function (k) {
-      if (k !== 'existencias') out[k] = p[k];
+    PRODUCT_HEADERS.forEach(function (k) {
+      if (k !== 'existencias') out[k] = p[k] === undefined ? '' : p[k];
     });
     out.visible = true;
     out.disponible = avail[p.sku];
@@ -104,7 +109,9 @@ function handleCatalog(ss, now) {
   return { ok: true, products: products, updatedAt: (now || new Date()).toISOString() };
 }
 
-function handleOrder(ss, body, lock, now) {
+// deps (opcional): { rand, flush } para pruebas.
+function handleOrder(ss, body, lock, now, deps) {
+  deps = deps || {};
   if (!lock.tryLock(10000)) return { ok: false, error: 'ocupado' };
   try {
     var d = loadData(ss);
@@ -112,15 +119,30 @@ function handleOrder(ss, body, lock, now) {
     var avail = computeAvailability(d.products, d.pedidos, d.lineas);
     var check = validateOrder(body, visibles, avail);
     if (!check.ok) return check;
-    var rec = buildOrderRecord(body, check.lines, now);
+
+    // Número de pedido único: se regenera mientras ya exista en la hoja.
+    var existing = {};
+    d.pedidos.forEach(function (x) { existing[x.pedido_id] = true; });
+    var rec = buildOrderRecord(body, check.lines, now, deps.rand);
+    for (var tries = 0; existing[rec.pedido.pedido_id] && tries < 20; tries++) {
+      rec = buildOrderRecord(body, check.lines, now, deps.rand);
+    }
+    while (existing[rec.pedido.pedido_id]) {
+      var longId = rec.pedido.pedido_id + '-' + pad(Math.floor(Math.random() * 1000), 3);
+      rec.pedido.pedido_id = longId;
+      rec.lineas.forEach(function (l) { l.pedido_id = longId; });
+    }
+
     var p = rec.pedido;
     p.nombre = safeText(p.nombre);
-    p.whatsapp = "'" + String(p.whatsapp).replace(/^'/, '');
+    p.whatsapp = safeText(p.whatsapp);
     p.direccion_zona = safeText(p.direccion_zona);
     p.resumen = safeText(p.resumen);
-    appendByHeader(requireSheet(ss, TAB_PEDIDOS), p);
-    var lineSheet = requireSheet(ss, TAB_LINEAS);
-    rec.lineas.forEach(function (l) { appendByHeader(lineSheet, l); });
+    appendRowsByHeader(requireSheet(ss, TAB_PEDIDOS), [p]);
+    appendRowsByHeader(requireSheet(ss, TAB_LINEAS), rec.lineas);
+    // Confirmar las escrituras antes de soltar el candado, para que el siguiente pedido las vea.
+    if (deps.flush) deps.flush();
+    else if (typeof SpreadsheetApp !== 'undefined') SpreadsheetApp.flush();
     return { ok: true, pedido_id: p.pedido_id };
   } finally {
     lock.releaseLock();
@@ -181,8 +203,6 @@ function setup() {
     var rule = SpreadsheetApp.newDataValidation().requireValueInList(ESTADOS, true).setAllowInvalid(false).build();
     ped.getRange(2, estadoCol, 1000, 1).setDataValidation(rule);
   }
-  var waCol = columnOf(ped, 'whatsapp');
-  if (waCol) ped.getRange(2, waCol, 1000, 1).setNumberFormat('@');
 
   if (prod.getLastRow() <= 1) {
     var headers = prod.getRange(1, 1, 1, prod.getLastColumn()).getValues()[0];
