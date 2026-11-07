@@ -3,6 +3,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test \"tests/unit/**/*.test.js\""
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "smoke": "NODE_PATH=$(npm root -g) node --test \"tests/smoke/**/*.test.js\""
   }
 }
