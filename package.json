@@ -1,0 +1,8 @@
+{
+  "name": "catalogo-reservas",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test \"tests/unit/**/*.test.js\""
+  }
+}
