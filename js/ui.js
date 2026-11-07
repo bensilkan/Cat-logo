@@ -83,7 +83,8 @@
     var key = a && container.contains(a) ? a.getAttribute('data-fk') : null;
     fn();
     if (!key) return;
-    var next = container.querySelector('[data-fk="' + key + '"]');
+    var esc = window.CSS && CSS.escape ? CSS.escape(key) : key.replace(/["\\]/g, '\\$&');
+    var next = container.querySelector('[data-fk="' + esc + '"]');
     if (next && !next.disabled) next.focus();
     else {
       var fallback = container.querySelector('[data-fk-fallback]') || container.closest('[role="dialog"]');
@@ -272,6 +273,7 @@
     var src = p.imagen || '';
     if (r.img.getAttribute('src') !== src) r.img.setAttribute('src', src);
     r.img.alt = altText(p);
+    if (r.open.textContent !== p.nombre) r.open.textContent = p.nombre;
     var b = badgeFor(p.disponible);
     r.badge.textContent = b.text;
     r.badge.className = 'badge badge--' + b.tone;
@@ -292,9 +294,14 @@
         );
       });
     } else if (p.variante) {
-      if (!r.tone.firstChild) {
-        r.tone.appendChild(h('p', { class: 'shade' }, [h('span', { class: 'shade__label', text: 'Tono' }), h('span', { class: 'shade__value', text: p.variante })]));
+      var value = r.tone.querySelector('.shade__value');
+      if (!value) {
+        value = h('span', { class: 'shade__value' });
+        r.tone.replaceChildren(h('p', { class: 'shade' }, [h('span', { class: 'shade__label', text: 'Tono' }), value]));
       }
+      if (value.textContent !== p.variante) value.textContent = p.variante;
+    } else if (r.tone.firstChild) {
+      r.tone.replaceChildren();
     }
   }
 
@@ -513,8 +520,7 @@
     var s = app.state;
     var p = s.bySku[l.sku];
     if (!p) return null;
-    var max = l.tipo === 'Reserva' ? Math.max(Number(p.disponible) || 0, l.cantidad) : ENCARGO_CAP;
-    if (l.tipo === 'Reserva') max = Number(p.disponible) || 0;
+    var max = l.tipo === 'Reserva' ? Number(p.disponible) || 0 : ENCARGO_CAP;
     var fk = 'l-' + l.tipo + '-' + l.sku;
     return h('li', { class: 'line' }, [
       h('div', { class: 'line__thumb' }, h('img', { src: p.imagen, alt: '', width: '1200', height: '1200', loading: 'lazy' })),
@@ -728,12 +734,22 @@
       return;
     }
     checkoutRefs = null;
-    var stepKey = s.step;
+    var done = s.step === 'done' && s.lastOrder;
+    var stepKey = done ? 'done:' + s.lastOrder.pedido_id : 'cart';
     var changed = builtStep !== stepKey;
+    // La confirmación no cambia con el sondeo: se construye una sola vez.
+    if (done && !changed) return;
+    // Conservar la posición de desplazamiento del carrito al reconstruirlo.
+    var oldBody = panel.querySelector('.drawer__body');
+    var scrollTop = !changed && oldBody ? oldBody.scrollTop : 0;
     keepFocus(panel, function () {
-      var parts = (s.step === 'done' && s.lastOrder ? renderDoneStep() : renderCartStep()).filter(Boolean);
+      var parts = (done ? renderDoneStep() : renderCartStep()).filter(Boolean);
       panel.replaceChildren.apply(panel, parts);
     });
+    if (scrollTop) {
+      var newBody = panel.querySelector('.drawer__body');
+      if (newBody) newBody.scrollTop = scrollTop;
+    }
     builtStep = stepKey;
     if (changed && drawer.isOpen()) {
       var target = panel.querySelector('[data-autofocus]');
@@ -766,6 +782,13 @@
     if (cfg.STORE_NAME) {
       Array.prototype.forEach.call(document.querySelectorAll('[data-store-name]'), function (n) { n.textContent = cfg.STORE_NAME; });
       document.title = cfg.STORE_NAME + ' — Maquillaje importado';
+    }
+    if (window.CatalogAPI && window.CatalogAPI.mode !== 'live') {
+      var banner = h('div', { class: 'demo-banner', role: 'note' }, [
+        h('span', { class: 'demo-banner__tag', text: 'Modo demostración' }),
+        h('span', { class: 'demo-banner__text', text: 'Los pedidos no se registran.' })
+      ]);
+      document.body.insertBefore(banner, $('.site-header'));
     }
     var year = $('#year');
     if (year) year.textContent = String(new Date().getFullYear());

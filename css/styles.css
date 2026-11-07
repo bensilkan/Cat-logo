@@ -175,6 +175,18 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 .icon-btn:hover { border-color: var(--hairline); background: rgba(255, 253, 250, .7); }
 
+/* ---------- Aviso de modo demostración ---------- */
+
+.demo-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px;
+  padding: 7px 16px;
+  background: var(--ivory-deep);
+  border-bottom: 1px solid var(--hairline-soft);
+  font-size: .6875rem; line-height: 1.4; color: var(--ink-soft);
+  text-align: center;
+}
+.demo-banner__tag { font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--wine); }
+
 /* ---------- Encabezado ---------- */
 
 .site-header {

@@ -57,6 +57,7 @@
   }
 
   function applyCatalog(list) {
+    var known = state.bySku; // datos previos, para nombrar productos que desaparecen
     var products = list.map(normalize).filter(function (p) { return p.sku && p.visible; });
     var bySku = {};
     var groups = [];
@@ -85,7 +86,19 @@
     state.groups = groups;
     state.brands = brands;
     if (state.filter.marca && brands.indexOf(state.filter.marca) < 0) state.filter.marca = '';
+    var gone = [];
+    cart.lines().forEach(function (l) {
+      if (!bySku[l.sku] && gone.indexOf(l.sku) < 0) gone.push(l.sku);
+    });
     setNotice(cart.reconcile(bySku));
+    if (gone.length) {
+      var named = gone.length === 1 && known[gone[0]] ? known[gone[0]].nombre : '';
+      ui.toast(named
+        ? '«' + named + '» ya no está disponible y se quitó de tu pedido.'
+        : gone.length === 1
+          ? 'Un producto ya no está disponible y se quitó de tu pedido.'
+          : 'Algunos productos ya no están disponibles y se quitaron de tu pedido.');
+    }
   }
 
   var lastNoticeKey = '';
@@ -142,11 +155,14 @@
         subtotal: Math.round((Number(p.precio) || 0) * l.cantidad * 100) / 100
       };
     });
+    var round = function (x) { return Math.round(x * 100) / 100; };
+    var reserva = 0, encargo = 0;
+    out.forEach(function (l) { if (l.tipo === 'Reserva') reserva += l.subtotal; else encargo += l.subtotal; });
     return {
       pedido_id: pedidoId,
       nombre: state.form.nombre.trim(),
       lines: out,
-      totals: cart.totals(state.bySku)
+      totals: { reserva: round(reserva), encargo: round(encargo), total: round(reserva + encargo) }
     };
   }
 
@@ -228,8 +244,12 @@
       case 'ocupado':
         state.formError = 'Estamos recibiendo varios pedidos a la vez. Espera unos segundos y vuelve a confirmar; tu pedido sigue guardado.';
         break;
+      case 'red':
+        // Sin respuesta (red o tiempo agotado): el pedido pudo haberse registrado de todos modos.
+        state.formError = 'No recibimos confirmación. Es posible que tu pedido sí se haya registrado: antes de reintentar, espera un momento o escríbenos por WhatsApp.';
+        break;
       default:
-        state.formError = 'No pudimos enviar tu pedido. Revisa tu conexión y vuelve a intentarlo; tu pedido sigue guardado.';
+        state.formError = 'No pudimos enviar tu pedido. Vuelve a intentarlo en un momento; tu pedido sigue guardado.';
     }
     ui.render();
   }

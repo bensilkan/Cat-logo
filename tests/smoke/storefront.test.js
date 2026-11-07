@@ -3,6 +3,7 @@
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { chromium } = require('playwright');
 const { start } = require('../../tools/serve.js');
 
@@ -274,6 +275,159 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     });
   });
 }
+
+async function poll(page) {
+  // Simula el sondeo: volver a la pestaña dispara una actualización del inventario.
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForTimeout(700);
+  await page.evaluate(() => window.CatalogUI.render());
+}
+
+describe('storefront (fix round 1)', () => {
+  test('cart and confirmation keep their scroll position across polls (mobile)', async () => {
+    const { context, page } = await openPage(VIEWPORTS.mobile);
+    try {
+      await waitForCatalog(page);
+      for (const id of ['elf-brow-pencil', 'elf-clear-brow', 'wnw-eyeliner', 'langmanni-set', 'mny-sky-high']) {
+        await card(page, id).locator('.product-card__cta').click();
+      }
+      await openCart(page);
+      const body = page.locator('#cart-drawer .drawer__body');
+      const dims = await body.evaluate((el) => ({ sh: el.scrollHeight, ch: el.clientHeight }));
+      assert.ok(dims.sh > dims.ch + 150, 'cart body should scroll: ' + JSON.stringify(dims));
+      const set = await body.evaluate((el) => { el.scrollTop = 260; return el.scrollTop; });
+      await poll(page);
+      const after = await page.locator('#cart-drawer .drawer__body').evaluate((el) => el.scrollTop);
+      assert.ok(Math.abs(after - set) <= 2, `cart scrollTop ${set} -> ${after}`);
+
+      await page.getByRole('button', { name: 'Continuar' }).click();
+      await fillCheckout(page);
+      await page.getByRole('button', { name: 'Confirmar pedido' }).click();
+      await page.getByRole('heading', { name: 'Pedido recibido' }).waitFor();
+      const conf = page.locator('#cart-drawer .drawer__body');
+      const set2 = await conf.evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+      assert.ok(set2 > 0, 'confirmation should scroll on mobile');
+      await poll(page);
+      const after2 = await page.locator('#cart-drawer .drawer__body').evaluate((el) => el.scrollTop);
+      assert.ok(Math.abs(after2 - set2) <= 2, `confirmation scrollTop ${set2} -> ${after2}`);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('mock mode shows the "Modo demostración" banner', async () => {
+    const { context, page } = await openPage(VIEWPORTS.desktop);
+    try {
+      await waitForCatalog(page);
+      assert.equal(await page.locator('.demo-banner').isVisible(), true);
+      assert.match(await page.locator('.demo-banner').textContent(), /Modo demostración/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('a stored line whose product no longer exists is removed with a calm notice', async () => {
+    const context = await browser.newContext({ viewport: VIEWPORTS.mobile, deviceScaleFactor: 1 });
+    context.setDefaultTimeout(10000);
+    await context.addInitScript(() => {
+      if (!sessionStorage.getItem('seeded')) {
+        sessionStorage.setItem('seeded', '1');
+        localStorage.setItem('catalogo.cart.v1', JSON.stringify({ v: 1, lines: [
+          { sku: 'nooni-applecherry', cantidad: 1, tipo: 'Reserva' },
+          { sku: 'producto-retirado', cantidad: 1, tipo: 'Encargo' }
+        ] }));
+      }
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto(server.url + '?mock=1');
+      await page.getByText('Un producto ya no está disponible y se quitó de tu pedido.').waitFor();
+      assert.equal((await page.locator('#cart-count').textContent()).trim(), '1');
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('live mode on the published host ignores ?mock params and talks to the API', async () => {
+    const ROOT = path.join(__dirname, '..', '..');
+    const HOST = 'http://tienda.test';
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'products.seed.json'), 'utf8'));
+    const hidden = new Set();
+    const edits = {};
+    const posts = [];
+    let failNextPost = true;
+    const context = await browser.newContext({ viewport: VIEWPORTS.desktop, deviceScaleFactor: 1 });
+    context.setDefaultTimeout(10000);
+    await context.route(HOST + '/**', async (route) => {
+      const req = route.request();
+      const url = new URL(req.url());
+      if (url.pathname === '/api') {
+        if (req.method() === 'POST') {
+          posts.push({ type: req.headers()['content-type'], body: req.postData() });
+          if (failNextPost) { failNextPost = false; return route.abort('failed'); }
+          return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, pedido_id: 'R-261107-0001' }) });
+        }
+        assert.equal(url.searchParams.get('action'), 'catalog');
+        const products = seed.filter((p) => !hidden.has(p.sku)).map((p) => {
+          const o = Object.assign({}, p, { disponible: p.existencias }, edits[p.sku] || {});
+          delete o.existencias;
+          return o;
+        });
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, products, updatedAt: new Date().toISOString() }) });
+      }
+      if (url.pathname === '/js/config.js') {
+        return route.fulfill({
+          contentType: 'text/javascript',
+          body: "window.CATALOG_CONFIG = { API_URL: '" + HOST + "/api', POLL_MS: 600000, STORE_NAME: 'Atelier de Belleza' };"
+        });
+      }
+      const file = path.join(ROOT, url.pathname === '/' ? 'index.html' : url.pathname);
+      if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: 'no' });
+      return route.fulfill({ path: file });
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto(HOST + '/?mock=fail');
+      await waitForCatalog(page);
+      assert.equal(await page.evaluate(() => window.CatalogAPI.mode), 'live');
+      assert.equal(await page.locator('.demo-banner').count(), 0);
+
+      await card(page, 'nooni-applecherry').locator('.product-card__cta').click();
+      await card(page, 'elf-brow-pencil').locator('.product-card__cta').click();
+      await page.waitForFunction(() => document.querySelector('#cart-count').textContent.trim() === '2');
+
+      // El SKU se oculta en la hoja: el siguiente sondeo lo quita con un aviso que lo nombra.
+      hidden.add('nooni-applecherry');
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await page.getByText('«Apple Seed Lip Oil» ya no está disponible y se quitó de tu pedido.').waitFor();
+      await page.waitForFunction(() => document.querySelector('#cart-count').textContent.trim() === '1');
+      // Un cambio de nombre o tono en la hoja (sin cambiar la estructura) también llega a las tarjetas.
+      edits['elf-bronzer'] = { nombre: 'Camo Liquid Bronzer' };
+      edits['wnw-gel-liner'] = { variante: '662 Berry Nice' };
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await page.waitForTimeout(800);
+      assert.equal((await card(page, 'elf-bronzer').locator('.product-card__open').textContent()).trim(), 'Camo Liquid Bronzer');
+      assert.equal((await card(page, 'wnw-gel-liner').locator('.shade__value').textContent()).trim(), '662 Berry Nice');
+
+      await goToCheckout(page);
+      await fillCheckout(page);
+      await page.getByRole('button', { name: 'Confirmar pedido' }).click();
+      await page.getByText('No recibimos confirmación. Es posible que tu pedido sí se haya registrado').waitFor();
+      assert.equal((await page.locator('#cart-count').textContent()).trim(), '1');
+
+      await page.getByRole('button', { name: 'Confirmar pedido' }).click();
+      await page.getByRole('heading', { name: 'Pedido recibido' }).waitFor();
+      assert.equal(posts.length, 2);
+      assert.equal(posts[1].type, 'text/plain;charset=utf-8');
+      const body = JSON.parse(posts[1].body);
+      assert.deepEqual(body.items, [{ sku: 'elf-brow-pencil', cantidad: 1, tipo: 'Reserva' }]);
+      assert.equal(body.cliente.whatsapp, '+503 7000-1234');
+      assert.match(await page.locator('#cart-drawer').textContent(), /Total\$8\.00/);
+    } finally {
+      await context.close();
+    }
+  });
+});
 
 describe('storefront (narrow)', () => {
   test('no horizontal scroll at 360px', async () => {

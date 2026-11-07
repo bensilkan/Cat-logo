@@ -11,12 +11,17 @@
 //                     reserva "de otra persona" que toma todas las unidades del primer SKU
 //                     reservado; la validación real responde entonces sin_existencias.
 //   CatalogAPI.mockState() → { posts, pedidos, lineas } para inspeccionar lo registrado.
+// Con API_URL configurada, los parámetros ?mock=… solo funcionan en localhost / 127.0.0.1:
+// en el sitio publicado nadie puede forzar la simulación ni recibir un pedido falso.
 (function () {
-  var TIMEOUT_MS = 15000;
+  var GET_TIMEOUT_MS = 15000;
+  // El envío espera más: Apps Script puede tardar y cortar antes podría duplicar el pedido al reintentar.
+  var POST_TIMEOUT_MS = 30000;
   var MOCK_KEY = 'catalogo.mock.v1';
   var cfg = window.CATALOG_CONFIG || {};
   var params = new URLSearchParams(window.location.search);
-  var mockParam = params.get('mock');
+  var isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+  var mockParam = cfg.API_URL && !isLocalHost ? null : params.get('mock');
   var mode = mockParam === 'fail' ? 'fail'
     : mockParam === 'conflict' ? 'conflict'
     : (mockParam === '1' || !cfg.API_URL) ? 'mock'
@@ -32,9 +37,9 @@
 
   // ---------- API real ----------
 
-  function request(url, options) {
+  function request(url, options, timeoutMs) {
     var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, TIMEOUT_MS);
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, timeoutMs || GET_TIMEOUT_MS);
     var opts = Object.assign({ cache: 'no-store', redirect: 'follow' }, options);
     if (ctrl) opts.signal = ctrl.signal;
     return fetch(url, opts).then(function (res) {
@@ -46,7 +51,7 @@
   var live = {
     fetchCatalog: function () {
       var sep = cfg.API_URL.indexOf('?') >= 0 ? '&' : '?';
-      return request(cfg.API_URL + sep + 'action=catalog').then(function (data) {
+      return request(cfg.API_URL + sep + 'action=catalog', {}, GET_TIMEOUT_MS).then(function (data) {
         if (!data || data.ok === false || !Array.isArray(data.products)) throw new Error('catalogo_invalido');
         return data;
       });
@@ -57,7 +62,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(order)
-      });
+      }, POST_TIMEOUT_MS);
     }
   };
 
