@@ -348,6 +348,29 @@ describe('storefront (fix round 1)', () => {
     }
   });
 
+  test('STORE_WHATSAPP set: footer shows a wa.me link; a card with a broken image shows the brand placeholder', async () => {
+    const context = await browser.newContext({ viewport: VIEWPORTS.desktop, deviceScaleFactor: 1 });
+    context.setDefaultTimeout(10000);
+    await context.route('**/js/config.js', (route) => route.fulfill({
+      contentType: 'text/javascript',
+      body: "window.CATALOG_CONFIG = { API_URL: '', POLL_MS: 600000, STORE_NAME: 'Atelier de Belleza', STORE_WHATSAPP: '+503 7000-0000' };"
+    }));
+    await context.route('**/img/products/elf-bronzer.*', (route) => route.abort());
+    const page = await context.newPage();
+    try {
+      await page.goto(server.url + '?mock=1');
+      await waitForCatalog(page);
+      const link = page.locator('.site-footer__contact a');
+      assert.equal(await link.getAttribute('href'), 'https://wa.me/50370000000');
+      assert.equal((await link.textContent()).trim(), 'Escríbenos por WhatsApp');
+      const media = card(page, 'elf-bronzer').locator('.product-card__media');
+      await page.waitForFunction(() => document.querySelector('.product-card[data-producto="elf-bronzer"] .product-card__media').classList.contains('is-noimg'));
+      assert.ok((await media.getAttribute('data-brand')).length > 0);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('live mode on the published host ignores ?mock params and talks to the API', async () => {
     const ROOT = path.join(__dirname, '..', '..');
     const HOST = 'http://tienda.test';
@@ -413,6 +436,9 @@ describe('storefront (fix round 1)', () => {
       await fillCheckout(page);
       await page.getByRole('button', { name: 'Confirmar pedido' }).click();
       await page.getByText('No recibimos confirmación. Es posible que tu pedido sí se haya registrado').waitFor();
+      assert.match(await page.locator('.form-error').innerText(), /espera un minuto antes de reintentar\. Te contactaremos por WhatsApp para confirmarlo\./);
+      assert.equal(await page.locator('.form-error a').count(), 0);
+      assert.equal(await page.locator('.site-footer__contact a').count(), 0);
       assert.equal((await page.locator('#cart-count').textContent()).trim(), '1');
 
       await page.getByRole('button', { name: 'Confirmar pedido' }).click();

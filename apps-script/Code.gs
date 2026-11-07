@@ -138,8 +138,9 @@ function handleOrder(ss, body, lock, now, deps) {
     p.whatsapp = safeText(p.whatsapp);
     p.direccion_zona = safeText(p.direccion_zona);
     p.resumen = safeText(p.resumen);
-    appendRowsByHeader(requireSheet(ss, TAB_PEDIDOS), [p]);
+    // Primero Líneas, luego Pedidos: si algo falla a medias, se vende de menos y nunca de más.
     appendRowsByHeader(requireSheet(ss, TAB_LINEAS), rec.lineas);
+    appendRowsByHeader(requireSheet(ss, TAB_PEDIDOS), [p]);
     // Confirmar las escrituras antes de soltar el candado, para que el siguiente pedido las vea.
     if (deps.flush) deps.flush();
     else if (typeof SpreadsheetApp !== 'undefined') SpreadsheetApp.flush();
@@ -197,6 +198,16 @@ function setup() {
   var prod = ensureTab(ss, TAB_PRODUCTOS, PRODUCT_HEADERS);
   var ped = ensureTab(ss, TAB_PEDIDOS, PEDIDO_HEADERS);
   ensureTab(ss, TAB_LINEAS, LINEA_HEADERS);
+
+  // Quita la hoja vacía que Google crea por defecto ("Hoja 1" / "Sheet1"), solo si no tiene datos.
+  var ours = [TAB_PRODUCTOS, TAB_PEDIDOS, TAB_LINEAS];
+  ss.getSheets().forEach(function (sh) {
+    var n = sh.getName();
+    if ((n === 'Hoja 1' || n === 'Sheet1') && ours.indexOf(n) === -1 && sh.getLastRow() === 0 && ss.getSheets().length > 1) {
+      ss.deleteSheet(sh);
+    }
+  });
+  ss.setActiveSheet(ped);
 
   var estadoCol = columnOf(ped, 'estado');
   if (estadoCol) {

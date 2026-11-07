@@ -2,6 +2,10 @@
 // loaded in the browser via <script>, and required from Node tests.
 
 function toNumber(v) {
+  if (typeof v === 'string') {
+    // Acepta "12,50", " $12.50 " y similares (coma decimal escrita a mano en la hoja).
+    v = v.replace(/^\s*\$?\s*/, '').replace(/\s+$/, '').replace(',', '.');
+  }
   var n = Number(v);
   return isFinite(n) && v !== '' && v !== null && v !== undefined ? n : 0;
 }

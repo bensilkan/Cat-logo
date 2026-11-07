@@ -60,6 +60,13 @@ test('toNumber and isCancelled', () => {
   assert.equal(toNumber(undefined), 0);
   assert.equal(toNumber('abc'), 0);
   assert.equal(toNumber('3'), 3);
+  assert.equal(toNumber('12,50'), 12.5);
+  assert.equal(toNumber(' $12.50 '), 12.5);
+  assert.equal(toNumber('$ 9,5'), 9.5);
+  assert.equal(toNumber('  4 '), 4);
+  assert.equal(toNumber('1,2,3'), 0);
+  assert.equal(toNumber('$'), 0);
+  assert.equal(toNumber('   '), 0);
   assert.equal(toNumber(2), 2);
   assert.equal(isCancelled(' cancelado '), true);
   assert.equal(isCancelled('Cancelado'), true);

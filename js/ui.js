@@ -34,6 +34,30 @@
     return node;
   }
 
+  // Foto ausente o rota: el contenedor muestra un recuadro marfil con el nombre de la marca (ver .is-noimg en el CSS).
+  function guardImg(img, p) {
+    var box = img.parentNode;
+    img.dataset.brand = p.marca || '';
+    if (!img.__guarded) {
+      img.__guarded = true;
+      img.addEventListener('error', function () {
+        var b = img.parentNode;
+        if (!b) return;
+        b.setAttribute('data-brand', img.dataset.brand || '');
+        b.classList.add('is-noimg');
+      });
+      img.addEventListener('load', function () {
+        if (img.parentNode) img.parentNode.classList.remove('is-noimg');
+      });
+    }
+    if (box) {
+      box.setAttribute('data-brand', p.marca || '');
+      box.classList.toggle('is-noimg', !p.imagen);
+    }
+    if (p.imagen) { if (img.getAttribute('src') !== p.imagen) img.setAttribute('src', p.imagen); }
+    else img.removeAttribute('src');
+  }
+
   function money(n) { return '$' + (Number(n) || 0).toFixed(2); }
 
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
@@ -270,8 +294,7 @@
   function updateCard(card, g) {
     var r = card._refs;
     var p = selectedOf(g);
-    var src = p.imagen || '';
-    if (r.img.getAttribute('src') !== src) r.img.setAttribute('src', src);
+    guardImg(r.img, p);
     r.img.alt = altText(p);
     if (r.open.textContent !== p.nombre) r.open.textContent = p.nombre;
     var b = badgeFor(p.disponible);
@@ -427,7 +450,7 @@
     var content = h('div', { class: 'pd' }, [
       h('button', { type: 'button', class: 'icon-btn pd__close', 'aria-label': 'Cerrar', 'data-close': true, 'data-fk': 'close' }, closeIcon()),
       h('div', { class: 'pd__media' + (b.tone === 'out' ? ' is-out' : '') }, [
-        h('img', { src: p.imagen, alt: altText(p), width: '1200', height: '1200', decoding: 'async' })
+        h('img', { alt: altText(p), width: '1200', height: '1200', decoding: 'async' })
       ]),
       h('div', { class: 'pd__info' }, [
         h('p', { class: 'pd__brand', text: p.marca }),
@@ -452,6 +475,7 @@
         ])
       ])
     ]);
+    guardImg(content.querySelector('.pd__media img'), p);
     keepFocus(modal.panel, function () { modal.panel.replaceChildren(content); });
   }
 
@@ -522,8 +546,8 @@
     if (!p) return null;
     var max = l.tipo === 'Reserva' ? Number(p.disponible) || 0 : ENCARGO_CAP;
     var fk = 'l-' + l.tipo + '-' + l.sku;
-    return h('li', { class: 'line' }, [
-      h('div', { class: 'line__thumb' }, h('img', { src: p.imagen, alt: '', width: '1200', height: '1200', loading: 'lazy' })),
+    var li = h('li', { class: 'line' }, [
+      h('div', { class: 'line__thumb' }, h('img', { alt: '', width: '1200', height: '1200', loading: 'lazy' })),
       h('div', { class: 'line__info' }, [
         h('p', { class: 'line__brand', text: p.marca }),
         h('p', { class: 'line__name', text: p.nombre }),
@@ -535,6 +559,8 @@
       ]),
       h('p', { class: 'line__price', text: money(p.precio * l.cantidad) })
     ]);
+    guardImg(li.querySelector('.line__thumb img'), p);
+    return li;
   }
 
   function cartSection(title, tipo, lines, subtotal, note) {
@@ -664,6 +690,10 @@
       return h('div', { class: 'summary__row' }, [h('span', { text: row[0] }), h('span', { text: row[1] })]);
     }).concat([h('div', { class: 'summary__row summary__row--total' }, [h('span', { text: 'Total' }), h('span', { text: money(t.total) })])]));
     r.formError.textContent = s.formError || '';
+    if (s.formError && s.formLink) {
+      r.formError.appendChild(document.createTextNode(' '));
+      r.formError.appendChild(h('a', { href: s.formLink.href, target: '_blank', rel: 'noopener', text: s.formLink.text }));
+    }
     r.formError.hidden = !s.formError;
     r.submit.disabled = !!s.submitting;
     r.submit.textContent = s.submitting ? 'Enviando…' : 'Confirmar pedido';
@@ -789,6 +819,14 @@
         h('span', { class: 'demo-banner__text', text: 'Los pedidos no se registran.' })
       ]);
       document.body.insertBefore(banner, $('.site-header'));
+    }
+    var wa = String(cfg.STORE_WHATSAPP || '').replace(/\D/g, '');
+    var footInner = $('.site-footer__inner');
+    if (wa && footInner) {
+      footInner.insertBefore(
+        h('p', { class: 'site-footer__contact' }, h('a', { href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener', text: 'Escríbenos por WhatsApp' })),
+        $('.site-footer__small')
+      );
     }
     var year = $('#year');
     if (year) year.textContent = String(new Date().getFullYear());

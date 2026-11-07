@@ -17,12 +17,14 @@ y los tres archivos de la carpeta `apps-script/` de este proyecto:
 
 ## Parte 2. Preparar la hoja (`setup`)
 
-1. Arriba, en el selector de funciones (junto a "Ejecutar"), elige **`setup`**.
-2. Pulsa **Ejecutar**.
-3. Google pedirá permiso. Pulsa **Revisar permisos** y elige tu cuenta.
-4. Aparecerá un aviso: *"Google no ha verificado esta aplicación"*. Es normal: el script es tuyo y lo escribiste tú. Pulsa **Configuración avanzada** y luego **Ir a (nombre del proyecto) (no seguro)**.
-5. Pulsa **Permitir**.
-6. Cuando termine, vuelve a la hoja: verás las pestañas **Productos** (con los 14 productos cargados), **Pedidos** y **Líneas**, con los encabezados en vino y letras marfil.
+1. **Zona horaria (para que las fechas de los pedidos sean las de aquí).** En el editor de Apps Script, pulsa el engranaje de la izquierda (**Configuración del proyecto**), busca **Zona horaria** y elige **(GMT-06:00) Hora central - El Salvador** (`America/El_Salvador`). Luego, en la hoja de Google: **Archivo → Configuración → Zona horaria**, y elige la misma.
+2. Abre el archivo **`Code`** en la lista de la izquierda (si tienes abierto `Seed`, el selector no mostrará `setup`).
+3. Arriba, en el selector de funciones (junto a "Ejecutar"), elige **`setup`**.
+4. Pulsa **Ejecutar**.
+5. Google pedirá permiso. Pulsa **Revisar permisos** y elige tu cuenta.
+6. Aparecerá un aviso: *"Google no ha verificado esta aplicación"*. Es normal: el script es tuyo y lo escribiste tú. Pulsa **Configuración avanzada** y luego **Ir a (nombre del proyecto) (no seguro)**.
+7. Pulsa **Permitir**.
+8. Cuando termine, vuelve a la hoja: verás las pestañas **Productos** (con los 14 productos cargados), **Pedidos** y **Líneas**, con los encabezados en vino y letras marfil. Si existía una hoja vacía llamada "Hoja 1", se elimina sola.
 
 Si lo ejecutas otra vez no pasa nada malo: no duplica productos ni borra pedidos.
 
@@ -33,14 +35,14 @@ Si lo ejecutas otra vez no pasa nada malo: no duplica productos ni borra pedidos
 3. Configura:
    - **Descripción:** `Catálogo v1`
    - **Ejecutar como:** **Yo**
-   - **Quién tiene acceso:** **Cualquier persona**
+   - **Quién tiene acceso:** **Cualquier persona** (no elijas «Cualquier persona con cuenta de Google» ni «Solo yo»: el catálogo dejaría de funcionar para tus clientes)
 4. Pulsa **Implementar** (y **Autorizar** si lo pide).
 5. Copia la **URL de la aplicación web** (termina en `/exec`).
 6. Pruébala: pega la URL en el navegador y agrega `?action=catalog` al final. Debes ver un texto que empieza con `{"ok":true,"products":[...`.
 
 ## Parte 4. Conectar con el sitio
 
-Envíame la URL, o pégala tú en el archivo `js/config.js` del proyecto, en el lugar indicado.
+Envíame la URL, o pégala tú en el archivo `js/config.js` del proyecto, en `API_URL`. En ese mismo archivo, `STORE_WHATSAPP` es el número de WhatsApp de la tienda con código de país y sin signos (por ejemplo `'50370000000'`): con él, el catálogo muestra un enlace para escribirte.
 
 ## Actualizar el código después de un cambio
 
@@ -61,7 +63,13 @@ Si usas "Nueva implementación" en lugar de esto, obtendrás una URL distinta.
 
 **Cambiar el estado de un pedido.** Usa la misma lista: Pendiente, Confirmado, Entregado o Cancelado.
 
-**Reponer mercadería.** En **Productos**, edita la columna **existencias** y escribe el total físico que tienes ahora (no solo lo nuevo). Ejemplo: había 1 y llegan 3 más, escribe 4. El catálogo descuenta por su cuenta las reservas activas.
+**Reponer mercadería.** La columna **existencias** es el total de unidades que has puesto a la venta desde el inicio. Cuando llegue mercadería, **suma lo nuevo al número que ya está**. No restes nada cuando vendes o entregas: el catálogo ya descuenta solo todos los pedidos que no estén Cancelados.
+Ejemplo: en existencias dice 5 y llegan 3 más para vender; escribe **8**. Tengas o no pedidos pendientes, el número sigue siendo 8: el catálogo muestra 8 menos lo reservado.
+Si entre lo que llega hay unidades para cubrir encargos, **no las sumes**: son de quien las encargó. Suma solo las que sobren para la venta.
+
+**Anular un pedido o cambiar cantidades.** Para anular un pedido, cambia su estado a **Cancelado**. **Nunca borres filas** de **Pedidos** ni de **Líneas**: borrar una fila de Líneas libera existencias y puede causar sobreventa. Para cambiar la cantidad de un pedido que ya existe, cancela ese pedido y pide al cliente (o haz tú) uno nuevo.
+
+**Agregar un producto nuevo.** En **Productos**, agrega una fila al final con un **sku** único (sin repetir, por ejemplo `elf-gloss-rosa`) y llena las demás columnas. La foto debe agregarse a la carpeta `img/products/` del proyecto con el nombre `<sku>.webp` (pídeselo a tu desarrollador). Si dejas **imagen** en blanco, o la foto no carga, el catálogo muestra un recuadro marfil con el nombre de la marca. Escribe los precios con punto decimal (`12.50`); la coma (`12,50`) también se entiende.
 
 **Ocultar un producto.** En **Productos**, pon **FALSE** en la columna **visible**. Para mostrarlo otra vez, pon **TRUE**. No se borra nada.
 
@@ -72,4 +80,4 @@ Si usas "Nueva implementación" en lugar de esto, obtendrás una URL distinta.
 - No cambies los nombres de las pestañas (`Productos`, `Pedidos`, `Líneas`) ni los encabezados de la fila 1. Puedes cambiar el orden de las columnas.
 - Los cambios en la hoja se ven en el catálogo en unos 20 segundos.
 - Si el catálogo dice que no puede cargar, revisa que el acceso de la implementación sea **Cualquier persona** y que la URL termine en `/exec`.
-- Si ves "ocupado" al confirmar, alguien más estaba reservando en ese instante: basta con reintentar.
+- No borres filas de **Pedidos** ni de **Líneas**; para anular un pedido usa el estado **Cancelado**.

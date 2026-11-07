@@ -7,6 +7,10 @@
   var ui = window.CatalogUI;
   var POLL_MS = Number(cfg.POLL_MS) > 0 ? Number(cfg.POLL_MS) : 20000;
 
+  function whatsappDigits() {
+    return String(cfg.STORE_WHATSAPP || '').replace(/\D/g, '');
+  }
+
   function safeStorage() {
     try {
       var s = window.localStorage;
@@ -32,6 +36,7 @@
     form: { nombre: '', whatsapp: '', direccion_zona: '' },
     errors: {},
     formError: '',
+    formLink: null,         // { href, text } enlace opcional bajo el mensaje de error
     submitting: false,
     lastOrder: null
   };
@@ -171,6 +176,7 @@
     var errors = validateForm(state.form);
     state.errors = errors;
     state.formError = '';
+    state.formLink = null;
     var firstBad = ['nombre', 'whatsapp', 'direccion_zona'].filter(function (k) { return errors[k]; })[0];
     if (firstBad) { ui.render(); ui.focusField(firstBad); return; }
     if (!cart.lines().length) { state.step = 'cart'; ui.render(); return; }
@@ -209,6 +215,7 @@
       state.step = 'done';
       state.errors = {};
       state.formError = '';
+      state.formLink = null;
       state.form = { nombre: '', whatsapp: '', direccion_zona: '' };
       cart.clear();
       ui.render();
@@ -246,7 +253,13 @@
         break;
       case 'red':
         // Sin respuesta (red o tiempo agotado): el pedido pudo haberse registrado de todos modos.
-        state.formError = 'No recibimos confirmación. Es posible que tu pedido sí se haya registrado: antes de reintentar, espera un momento o escríbenos por WhatsApp.';
+        var wa = whatsappDigits();
+        if (wa) {
+          state.formError = 'No recibimos confirmación. Es posible que tu pedido sí se haya registrado: espera un minuto antes de reintentar.';
+          state.formLink = { href: 'https://wa.me/' + wa, text: 'Escríbenos por WhatsApp' };
+        } else {
+          state.formError = 'No recibimos confirmación. Es posible que tu pedido sí se haya registrado: espera un minuto antes de reintentar. Te contactaremos por WhatsApp para confirmarlo.';
+        }
         break;
       default:
         state.formError = 'No pudimos enviar tu pedido. Vuelve a intentarlo en un momento; tu pedido sigue guardado.';
@@ -338,6 +351,7 @@
       if (!cart.lines().length) return;
       state.step = 'checkout';
       state.formError = '';
+      state.formLink = null;
       ui.render();
       ui.focusField('nombre');
     },

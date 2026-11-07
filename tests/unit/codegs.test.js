@@ -246,3 +246,12 @@ test('handleCatalog never exposes extra private columns', () => {
   assert.ok(!('costo' in out) && !('proveedor' in out) && !('existencias' in out));
   assert.deepEqual(Object.keys(out).sort(), PROD_HEADER.filter((h) => h !== 'existencias').concat('disponible').sort());
 });
+
+test('handleOrder writes Líneas before Pedidos (a partial failure under-sells, never over-sells)', () => {
+  const c = load();
+  const ss = makeSs([P('elf-bronzer')]);
+  ss.sheets['Pedidos'].failWrite = true;
+  assert.throws(() => c.handleOrder(ss, body([{ sku: 'elf-bronzer', cantidad: 1, tipo: 'Reserva' }]), lock(), NOW));
+  assert.equal(ss.sheets['Líneas'].rows.length, 2);
+  assert.equal(ss.sheets['Pedidos'].rows.length, 1);
+});

@@ -5,5 +5,7 @@ window.CATALOG_CONFIG = {
   // Cada cuánto se actualiza el inventario, en milisegundos.
   POLL_MS: 20000,
   // Nombre de la tienda: aparece en el encabezado, el pie y el título de la pestaña.
-  STORE_NAME: 'Atelier de Belleza'
+  STORE_NAME: 'Atelier de Belleza',
+  // WhatsApp de la tienda en dígitos internacionales, sin + ni espacios, por ejemplo '50370000000'. Vacío = no se muestra ningún enlace de WhatsApp.
+  STORE_WHATSAPP: ''
 };
