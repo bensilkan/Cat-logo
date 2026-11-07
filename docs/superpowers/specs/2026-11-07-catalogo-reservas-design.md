@@ -1,7 +1,7 @@
 # Catálogo de belleza con reservas — Diseño
 
 Fecha: 2026-11-07
-Estado: borrador para revisión
+Estado: aprobado
 
 ## 1. Objetivo
 
@@ -125,18 +125,16 @@ nunca descuentan existencias.
 | wet n wild perfectpout Rouge à Lèvres | — | 1 | $5.50 |
 | wet n wild Labiales clásicos (tapa transparente) | Dorado/Marrón · Rojizo | 1 + 1 | $4.50 |
 | Maybelline Lash Sensational Sky High, 801 Very Black | — | 1 | $16.00 |
-| nooni Apple Seed Lip Oil (individual) | Appleberry · Applecherry · Appleplum | 1 + 1 + 1 | $12.50 c/u |
+| nooni Apple Seed Lip Oil, Applecherry (individual) | — | 1 | $12.50 |
 | LANGMANNI Set de Labios Matte & Nude (4 piezas) | — | 1 | $14.00 |
 
-Supuestos por confirmar en la revisión:
+Decisiones confirmadas:
 
-- **perfectpout a $5.50:** apliqué el precio tanto al labial Rouge à Lèvres
-  como al delineador en gel perfectpout.
-- **nooni:** las 3 unidades son una de cada tono y se venden sueltas, así que
-  se muestran en una sola tarjeta con selector de tono, igual que los
-  labiales clásicos.
-- **Brow Pencil y Clear Brow & Lash:** los sets se venden como 2 unidades
-  sueltas; los textos dirán "unidad" en vez de "set de 2".
+- perfectpout a $5.50 aplica al labial Rouge à Lèvres y al delineador en gel 661D.
+- nooni: solo hay 1 unidad, tono Applecherry, vendida suelta. Los otros tonos no
+  se muestran.
+- Brow Pencil y Clear Brow & Lash: los sets se venden como 2 unidades sueltas;
+  los textos dicen "unidad" en vez de "set de 2".
 
 ## 6. Experiencia del cliente
 
